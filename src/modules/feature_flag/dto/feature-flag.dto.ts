@@ -2,10 +2,12 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -48,6 +50,21 @@ export class CreateVariantDto {
   valueType: VariantValueType = VariantValueType.STRING;
 }
 
+export class CreateFeatureFlagEnvironmentDto {
+  @IsUUID()
+  environmentId!: string;
+
+  @IsBoolean()
+  @IsOptional()
+  enabled?: boolean;
+
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  rolloutPercentage?: number;
+}
+
 // ─── Main DTO ───────────────────────────────────────────────────────────────────
 
 export class CreateFeatureFlagRequestDto {
@@ -88,7 +105,14 @@ export class CreateFeatureFlagRequestDto {
    */
   @IsOptional()
   @IsEnum(AllocationStrategy)
-  allocationStrategy: AllocationStrategy = AllocationStrategy.DETERMINISTIC_HASH;
+  allocationStrategy: AllocationStrategy =
+    AllocationStrategy.DETERMINISTIC_HASH;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateFeatureFlagEnvironmentDto)
+  environments?: CreateFeatureFlagEnvironmentDto[];
 
   /**
    * Optional salt to re-randomize user assignments without deleting the flag.

@@ -36,12 +36,12 @@ export default () => ({
     //     keySecret: process.env.RAZORPAY_KEY_SECRET,
     // },
 
-    // redis: {
-    //     host: process.env.REDIS_HOST ?? '127.0.0.1',
-    //     port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-    //     password: process.env.REDIS_PASSWORD ?? '',
-    //     tls: process.env.REDIS_TLS === 'true',
-    // },
+    redis: {
+        host: process.env.REDIS_HOST ,
+        port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
+        password: process.env.REDIS_PASSWORD,
+        tls: process.env.REDIS_TLS === 'true',
+    },
 
     frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',
 });

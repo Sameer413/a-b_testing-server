@@ -1,9 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { User } from '../users/entities/user.entity';
 import { CreateFeatureFlagRequestDto } from './dto/feature-flag.dto';
 import { randomBytes } from 'crypto';
 
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { FeatureFlag } from './entities/feature.flag.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ProjectService } from '../project/project.service';
@@ -25,6 +29,8 @@ export class FeatureFlagService {
     private readonly ffEnvRepo: Repository<FeatureFlagEnvironment>,
     @InjectRepository(Environment)
     private readonly environmentRepo: Repository<Environment>,
+
+    private readonly dataSource: DataSource,
   ) {}
 
   private generateFeatureKey(name: string): string {
@@ -33,9 +39,14 @@ export class FeatureFlagService {
     return `${base}-${suffix}`;
   }
 
-  private async generateUniqueFeatureKey(name: string): Promise<string> {
+  private async generateUniqueFeatureKey(
+    name: string,
+    manager: EntityManager,
+  ): Promise<string> {
     let featureKey = this.generateFeatureKey(name);
-    while (await this.featureFlagRepo.findOne({ where: { key: featureKey } })) {
+    const featureFlagRepo = manager.getRepository(FeatureFlag);
+
+    while (await featureFlagRepo.findOne({ where: { key: featureKey } })) {
       featureKey = this.generateFeatureKey(name);
     }
     return featureKey;
@@ -46,46 +57,143 @@ export class FeatureFlagService {
     project: Project,
     user: User,
   ) {
-    const featureKey = await this.generateUniqueFeatureKey(dto.name);
+    return this.dataSource.transaction(async (manager) => {
+      // --------------------------------------------------
+      // 1. Validate environments if provided
+      // --------------------------------------------------
 
-    // Build variant list based on flag type
-    const variants =
-      dto.flagType === FlagType.BOOLEAN
-        ? [
-            {
-              name: 'On',
-              weight: 100,
-              value: 'true',
-              valueType: VariantValueType.BOOLEAN,
-            },
-            {
-              name: 'Off',
-              weight: 0,
-              value: 'false',
-              valueType: VariantValueType.BOOLEAN,
-            },
-          ]
-        : (dto.variants ?? []).map((v) => ({
-            name: v.name,
-            weight: v.weight,
-            value: v.value,
-            valueType: v.valueType,
-          }));
+      const environmentDtos = dto.environments ?? [];
 
-    const featureFlag = this.featureFlagRepo.create({
-      key: featureKey,
-      name: dto.name,
-      description: dto.description,
-      flagType: dto.flagType,
-      enabled: dto.enabled,
-      allocationStrategy: dto.allocationStrategy,
-      hashSalt: dto.hashSalt,
-      project,
-      createdBy: user,
-      variants,
+      let environments: Environment[] = [];
+
+      if (environmentDtos.length > 0) {
+        const environmentIds = environmentDtos.map((env) => env.environmentId);
+
+        // Prevent duplicate environment IDs
+        const uniqueEnvironmentIds = new Set(environmentIds);
+
+        if (uniqueEnvironmentIds.size !== environmentIds.length) {
+          throw new BadRequestException(
+            'Duplicate environments are not allowed',
+          );
+        }
+
+        // Only get environments belonging to this project
+        environments = await manager.getRepository(Environment).find({
+          where: {
+            id: In(environmentIds),
+            project: {
+              id: project.id,
+            },
+          },
+        });
+
+        // Ensure every requested environment belongs to project
+        if (environments.length !== environmentIds.length) {
+          throw new BadRequestException(
+            'One or more environments do not belong to this project',
+          );
+        }
+      }
+
+      // --------------------------------------------------
+      // 2. Generate unique feature key
+      // --------------------------------------------------
+
+      const featureKey = await this.generateUniqueFeatureKey(dto.name, manager);
+
+      // --------------------------------------------------
+      // 3. Build variants
+      // --------------------------------------------------
+
+      const variants =
+        dto.flagType === FlagType.BOOLEAN
+          ? [
+              {
+                name: 'On',
+                weight: 100,
+                value: 'true',
+                valueType: VariantValueType.BOOLEAN,
+              },
+              {
+                name: 'Off',
+                weight: 0,
+                value: 'false',
+                valueType: VariantValueType.BOOLEAN,
+              },
+            ]
+          : (dto.variants ?? []).map((variant) => ({
+              name: variant.name,
+              weight: variant.weight,
+              value: variant.value,
+              valueType: variant.valueType,
+            }));
+
+      // --------------------------------------------------
+      // 4. Create FeatureFlag
+      // --------------------------------------------------
+
+      const featureFlag = manager.getRepository(FeatureFlag).create({
+        key: featureKey,
+        name: dto.name,
+        description: dto.description,
+        flagType: dto.flagType,
+        enabled: dto.enabled,
+        allocationStrategy: dto.allocationStrategy,
+        hashSalt: dto.hashSalt,
+
+        // targetingRules: dto.targetingRules ?? null,
+
+        project,
+        createdBy: user,
+        variants,
+      });
+
+      const savedFeatureFlag = await manager
+        .getRepository(FeatureFlag)
+        .save(featureFlag);
+
+      // --------------------------------------------------
+      // 5. Create FeatureFlagEnvironment ONLY if provided
+      // --------------------------------------------------
+
+      if (environmentDtos.length > 0) {
+        const environmentMap = new Map(
+          environments.map((env) => [env.id, env]),
+        );
+
+        const featureFlagEnvironments = environmentDtos.map((envDto) =>
+          manager.getRepository(FeatureFlagEnvironment).create({
+            featureFlag: savedFeatureFlag,
+            environment: environmentMap.get(envDto.environmentId)!,
+
+            enabled: envDto.enabled ?? false,
+
+            rolloutPercentage: envDto.rolloutPercentage ?? 100,
+          }),
+        );
+
+        await manager
+          .getRepository(FeatureFlagEnvironment)
+          .save(featureFlagEnvironments);
+      }
+
+      // --------------------------------------------------
+      // 6. Return feature flag
+      // --------------------------------------------------
+
+      return manager.getRepository(FeatureFlag).findOne({
+        where: {
+          id: savedFeatureFlag.id,
+        },
+        relations: {
+          variants: true,
+          environmentOverrides: {
+            environment: true,
+          },
+        },
+      });
     });
-
-    return this.featureFlagRepo.save(featureFlag);
   }
 
   async listFeatureFlags(id: string) {
@@ -93,7 +201,13 @@ export class FeatureFlagService {
       where: {
         project: { id: id },
       },
-      relations: { project: true, createdBy: true, variants: true },
+      relations: {
+        project: {
+          environments: true,
+        },
+        createdBy: true,
+        variants: true,
+      },
       select: {
         project: { id: true, name: true },
         createdBy: { id: true, firstName: true, lastName: true },
