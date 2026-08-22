@@ -130,6 +130,44 @@ export class FeatureFlagService {
             }));
 
       // --------------------------------------------------
+      // 3.5. Variant Validation - Weight Sum = 100
+      // --------------------------------------------------
+
+      if (dto.flagType !== FlagType.BOOLEAN) {
+        if (variants.length === 0) {
+          throw new BadRequestException('At least one variant is required');
+        }
+
+        const variantNames = variants.map((v) => v.name.trim());
+        const uniqueNames = new Set(variantNames);
+
+        if (uniqueNames.size !== variantNames.length) {
+          throw new BadRequestException(
+            'Duplicate variant names are not allowed',
+          );
+        }
+
+        for (const variant of variants) {
+          if (variant.weight < 0 || variant.weight > 100) {
+            throw new BadRequestException(
+              `Variant "${variant.name}" weight must be between 0 and 100`,
+            );
+          }
+        }
+
+        const totalWeight = variants.reduce(
+          (sum, variant) => sum + variant.weight,
+          0,
+        );
+
+        if (totalWeight > 100) {
+          throw new BadRequestException(
+            'Total variant weight cannot exceed 100',
+          );
+        }
+      }
+
+      // --------------------------------------------------
       // 4. Create FeatureFlag
       // --------------------------------------------------
 
@@ -140,9 +178,9 @@ export class FeatureFlagService {
         flagType: dto.flagType,
         enabled: dto.enabled,
         allocationStrategy: dto.allocationStrategy,
-        hashSalt: dto.hashSalt,
+        hashSalt: dto.hashSalt ?? randomBytes(8).toString('hex'),
 
-        // targetingRules: dto.targetingRules ?? null,
+        targetingRules: dto.targetingRules ?? null,
 
         project,
         createdBy: user,
@@ -253,7 +291,6 @@ export class FeatureFlagService {
           environment: env,
           enabled: false, // off by default — enable per-env explicitly
           rolloutPercentage: 100, // 100% of eligible users once enabled
-          targetingRules: null, // no targeting rules by default
         }),
       );
 

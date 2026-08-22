@@ -22,6 +22,9 @@ export class Project extends BaseEntity {
   @OneToMany(() => Environment, (env) => env.project, { cascade: true })
   environments!: Environment[];
 
+  @Column({ default: true })
+  active!: boolean;
+
   @OneToMany(() => FeatureFlag, (flag) => flag.project)
   featureFlags!: FeatureFlag[];
 }

@@ -1,4 +1,5 @@
 import {
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -23,6 +24,7 @@ import {
   NoVariantsForBoolean,
   VariantWeightsSumTo100,
 } from '../../../common/validators/feature-flag.validators.js';
+import { TargetingRules } from 'src/common/interfaces/targeting-rule.interface.js';
 
 // ─── Variant sub-DTO ────────────────────────────────────────────────────────────
 
@@ -64,6 +66,37 @@ export class CreateFeatureFlagEnvironmentDto {
   @IsOptional()
   rolloutPercentage?: number;
 }
+
+export class CreateTargetingConditionDto {
+  @IsString()
+  @IsNotEmpty()
+  attribute!: string;
+  @IsEnum([
+    'in', 'not_in',
+    'equals', 'not_equals',
+    'contains', 'starts_with', 'ends_with',
+    'gte', 'lte', 'gt', 'lt',
+    'exists', 'not_exists',
+  ])
+  operator!: string;
+  @IsArray()
+  values!: (string | number | boolean)[];
+}
+export class CreateTargetingRuleGroupDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateTargetingConditionDto)
+  @ArrayMinSize(1)
+  conditions!: CreateTargetingConditionDto[];
+}
+export class CreateTargetingRulesDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateTargetingRuleGroupDto)
+  @ArrayMinSize(1)
+  groups!: CreateTargetingRuleGroupDto[];
+}
+
 
 // ─── Main DTO ───────────────────────────────────────────────────────────────────
 
@@ -139,4 +172,9 @@ export class CreateFeatureFlagRequestDto {
   @MinVariantsForMultivariate()
   @VariantWeightsSumTo100()
   variants?: CreateVariantDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateTargetingRulesDto)
+  targetingRules?: TargetingRules | null;
 }

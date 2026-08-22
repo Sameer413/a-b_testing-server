@@ -56,9 +56,9 @@ export class SdkService {
     }
 
     // ── STEP 4: Targeting rules ────────────────────────────────────────────
-    if (ffEnv.targetingRules) {
+    if (flag.targetingRules) {
       const matches = this.evaluateTargetingRules(
-        ffEnv.targetingRules,
+        flag.targetingRules,
         dto.userAttributes ?? {},
       );
 

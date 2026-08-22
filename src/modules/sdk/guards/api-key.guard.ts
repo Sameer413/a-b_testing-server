@@ -37,6 +37,10 @@ export class ApiKeyGuard implements CanActivate {
       throw new UnauthorizedException('Invalid API key');
     }
 
+    if (apiKey.expiresAt && new Date() > apiKey.expiresAt) {
+      throw new UnauthorizedException('API key has expired');
+    }
+
     request.sdkEnvironment = apiKey.environment;
 
     return true;

@@ -6,6 +6,7 @@ import { AllocationStrategy } from '../../../common/enums/allocation-strategy.en
 import { FlagType } from '../../../common/enums/flag-type.enum';
 import { FeatureFlagEnvironment } from './feature-flag-environment.entity.js';
 import { User } from '../../users/entities/user.entity.js';
+import { TargetingRules } from '../../../common/interfaces/targeting-rule.interface.js';
 
 @Entity('feature_flags')
 @Unique(['key', 'project'])
@@ -58,6 +59,14 @@ export class FeatureFlag extends BaseEntity {
   // - Example: rolloutPercentage = 50 → 50% On, 50% Off
   // @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
   // rolloutPercentage?: number;
+
+  /**
+   * JSONB targeting rules that determine which users are eligible.
+   * null = all users are eligible (no targeting).
+   * These rules apply globally across all environments.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  targetingRules!: TargetingRules | null;
 
   // ── Relationships ──
 

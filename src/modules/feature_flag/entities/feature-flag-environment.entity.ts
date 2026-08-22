@@ -2,7 +2,6 @@ import { BaseEntity } from '../../../database/entities/base.entity.js';
 import { Column, Entity, ManyToOne, Unique } from 'typeorm';
 import { FeatureFlag } from './feature.flag.entity.js';
 import { Environment } from '../../project/entities/environment.entity';
-import { TargetingRules } from '../../../common/interfaces/targeting-rule.interface';
 
 @Entity('feature_flag_environments')
 @Unique(['featureFlag', 'environment'])
@@ -27,11 +26,4 @@ export class FeatureFlagEnvironment extends BaseEntity {
      */
     @Column({ type: 'int', default: 100 })
     rolloutPercentage!: number;
-
-    /**
-     * JSONB targeting rules that determine which users are eligible.
-     * null = all users are eligible (no targeting).
-     */
-    @Column({ type: 'jsonb', nullable: true })
-    targetingRules!: TargetingRules | null;
 }

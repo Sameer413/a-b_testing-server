@@ -7,7 +7,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ApiKey } from './entities/api.key.entity';
 import { Repository } from 'typeorm';
 import { Environment } from '../project/entities/environment.entity';
-import { EnvironmentType } from 'src/common/enums/environment.type.enum';
 import { createHash, randomBytes } from 'crypto';
 import { GenerateApiKeyDto } from './dto/generate-api-key.dto';
 import { Project } from '../project/entities/project.entity';
@@ -21,14 +20,15 @@ export class ApiKeysService {
     private readonly environmentRepo: Repository<Environment>,
   ) {}
 
-  private readonly prefixMap: Record<EnvironmentType, string> = {
-    [EnvironmentType.DEVELOPMENT]: 'sdk_dev_',
-    [EnvironmentType.STAGING]: 'sdk_stg_',
-    [EnvironmentType.PRODUCTION]: 'sdk_prod_',
+  /** Known prefixes for default environments; custom ones get a generic prefix. */
+  private readonly knownPrefixes: Record<string, string> = {
+    development: 'sdk_dev_',
+    staging: 'sdk_stg_',
+    production: 'sdk_prod_',
   };
 
-  private generateRawKey(env: EnvironmentType): string {
-    const prefix = this.prefixMap[env];
+  private generateRawKey(envName: string): string {
+    const prefix = this.knownPrefixes[envName] ?? `sdk_${envName.slice(0, 4)}_`;
     const secret = randomBytes(32).toString('hex');
     return `${prefix}${secret}`;
   }
@@ -60,7 +60,9 @@ export class ApiKeysService {
 
     const apiKey = this.apiKeyRepo.create({
       key: hashedKey,
+      name: dto.name,
       active: true,
+      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       environment,
     });
     await this.apiKeyRepo.save(apiKey);
@@ -68,8 +70,10 @@ export class ApiKeysService {
     return {
       id: apiKey.id,
       key: rawKey,
+      name: apiKey.name,
       environment: dto.environment,
       active: true,
+      expiresAt: apiKey.expiresAt,
       createdAt: apiKey.createdAt,
     };
   }
@@ -93,13 +97,17 @@ export class ApiKeysService {
       where: { environment: { project: { id: project.id } } },
       relations: { environment: true },
     });
-    return keys.map((k) => ({
-      id: k.id,
-      environment: k.environment.name,
-      active: k.active,
-      // Show only a hint — e.g. sdk_prod_a1b2...****
-      keyHint: `${k.environment.name === 'production' ? 'sdk_prod_' : k.environment.name === 'staging' ? 'sdk_stg_' : 'sdk_dev_'}****`,
-      createdAt: k.createdAt,
-    }));
+    return keys.map((k) => {
+      const prefix = this.knownPrefixes[k.environment.name] ?? `sdk_${k.environment.name.slice(0, 4)}_`;
+      return {
+        id: k.id,
+        name: k.name,
+        environment: k.environment.name,
+        active: k.active,
+        keyHint: `${prefix}****`,
+        expiresAt: k.expiresAt,
+        createdAt: k.createdAt,
+      };
+    });
   }
 }

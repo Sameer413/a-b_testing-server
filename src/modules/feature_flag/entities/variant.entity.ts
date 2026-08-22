@@ -1,9 +1,10 @@
 import { BaseEntity } from "../../../database/entities/base.entity";
-import { Column, Entity, ManyToOne } from "typeorm";
+import { Column, Entity, ManyToOne, Unique } from "typeorm";
 import { FeatureFlag } from "./feature.flag.entity";
 import { VariantValueType } from "../../../common/enums/variant-value-type.enum.js";
 
 @Entity("variants")
+@Unique(['name', 'featureFlag'])
 export class Variant extends BaseEntity {
 
     @Column()

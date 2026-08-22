@@ -2,12 +2,12 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { Project } from './entities/project.entity';
 import { Repository } from 'typeorm';
-import { CreateProjectRequestDto } from './dto/project.dto';
+import { CreateProjectRequestDto, UpdateProjectDto } from './dto/project.dto';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { User } from '../users/entities/user.entity';
 import { Role } from '../../common/enums/role.enum';
 import { Environment } from './entities/environment.entity';
-import { EnvironmentType } from '../../common/enums/environment.type.enum';
+import { DEFAULT_ENVIRONMENTS } from '../../common/enums/environment.type.enum';
 
 @Injectable()
 export class ProjectService {
@@ -62,11 +62,9 @@ export class ProjectService {
     const savedProject = await this.projectRepository.save(project);
 
     // 5. Seed default environments
-    const defaultEnvironments = this.environmentRepository.create([
-      { name: EnvironmentType.DEVELOPMENT, project: savedProject },
-      { name: EnvironmentType.STAGING, project: savedProject },
-      { name: EnvironmentType.PRODUCTION, project: savedProject },
-    ]);
+    const defaultEnvironments = this.environmentRepository.create(
+      DEFAULT_ENVIRONMENTS.map((name) => ({ name, isDefault: true, project: savedProject })),
+    );
     await this.environmentRepository.save(defaultEnvironments);
 
     return savedProject;
@@ -93,10 +91,48 @@ export class ProjectService {
       where: {
         organization: {
           id: organizationId
-        }
+        },
+        active: true,
       }
     })
 
     return projects;
+  }
+
+  async updateProject(projectId: string, dto: UpdateProjectDto, organizationId: string, user: User): Promise<Project> {
+    const memberRole = await this.organizationService.getMemberRole(organizationId, user.id);
+    if (memberRole !== Role.OWNER && memberRole !== Role.ADMIN) {
+      throw new ForbiddenException('Only Owners and Admins can update projects');
+    }
+
+    const project = await this.projectRepository.findOne({
+      where: { id: projectId, organization: { id: organizationId }, active: true },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with id "${projectId}" not found`);
+    }
+
+    Object.assign(project, dto);
+    return this.projectRepository.save(project);
+  }
+
+  async softDeleteProject(projectId: string, organizationId: string, user: User): Promise<void> {
+    const memberRole = await this.organizationService.getMemberRole(organizationId, user.id);
+    if (memberRole !== Role.OWNER && memberRole !== Role.ADMIN) {
+      throw new ForbiddenException('Only Owners and Admins can delete projects');
+    }
+
+    const project = await this.projectRepository.findOne({
+      where: { id: projectId, organization: { id: organizationId }, active: true },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with id "${projectId}" not found`);
+    }
+
+    project.active = false;
+    project.deletedAt = new Date();
+    await this.projectRepository.save(project);
   }
 }
