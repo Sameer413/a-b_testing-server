@@ -2,7 +2,7 @@ import { BaseEntity } from '../../../database/entities/base.entity';
 import { Column, Entity, Index, ManyToOne } from 'typeorm';
 import { FeatureFlag } from '../../feature_flag/entities/feature.flag.entity';
 import { Variant } from '../../feature_flag/entities/variant.entity';
-// import { Environment } from '../../project/entities/environment.entity';
+import { Experiment } from './experiment.entity';
 
 @Entity('assignment_logs')
 @Index(['userId', 'featureFlagId'], { unique: true })
@@ -16,25 +16,28 @@ export class AssignmentLog extends BaseEntity {
      * of the customer's application.
      */
     @Column({ type: 'varchar', length: 255 })
-    userId: string;
+    userId!: string;
 
     @ManyToOne(() => FeatureFlag, { onDelete: 'CASCADE' })
-    featureFlag: FeatureFlag;
+    featureFlag!: FeatureFlag;
 
     @Column()
-    featureFlagId: string;
+    featureFlagId!: string;
 
     @ManyToOne(() => Variant, { onDelete: 'SET NULL', nullable: true })
-    variant: Variant;
+    variant!: Variant;
 
     @Column({ nullable: true })
-    variantId: string;
+    variantId!: string;
 
-    // @ManyToOne(() => Environment, { onDelete: 'CASCADE' })
-    // environment: Environment;
+    @ManyToOne(() => Experiment, { onDelete: 'CASCADE' })
+    experiment!: Experiment;
+
+    @Column()
+    experimentId!: string;
 
     @Column({ type: 'timestamptz' })
-    assignedAt: Date;
+    assignedAt!: Date;
 
     /**
      * Snapshot of user attributes at the time of assignment.
@@ -42,5 +45,5 @@ export class AssignmentLog extends BaseEntity {
      * e.g. { country: "IN", plan: "premium", role: "developer" }
      */
     @Column({ type: 'jsonb', nullable: true })
-    context: Record<string, any> | null;
+    context!: Record<string, any> | null;
 }

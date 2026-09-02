@@ -51,15 +51,6 @@ export class FeatureFlag extends BaseEntity {
   @Column({ type: 'varchar', length: 32, nullable: true })
   hashSalt!: string;
 
-  // TODO: rolloutPercentage (0–100)
-  // For boolean flags using `percentage_rollout` strategy, this controls what
-  // percentage of users receive the "On" variant. The remaining users get "Off".
-  // - Only meaningful when flagType === BOOLEAN && allocationStrategy === PERCENTAGE_ROLLOUT
-  // - Should be validated: @Min(0) @Max(100), nullable (null = use variant weights as-is)
-  // - Example: rolloutPercentage = 50 → 50% On, 50% Off
-  // @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
-  // rolloutPercentage?: number;
-
   /**
    * JSONB targeting rules that determine which users are eligible.
    * null = all users are eligible (no targeting).
@@ -91,3 +82,12 @@ export class FeatureFlag extends BaseEntity {
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL', eager: false })
   createdBy?: User;
 }
+
+// TODO: rolloutPercentage (0–100)
+// For boolean flags using `percentage_rollout` strategy, this controls what
+// percentage of users receive the "On" variant. The remaining users get "Off".
+// - Only meaningful when flagType === BOOLEAN && allocationStrategy === PERCENTAGE_ROLLOUT
+// - Should be validated: @Min(0) @Max(100), nullable (null = use variant weights as-is)
+// - Example: rolloutPercentage = 50 → 50% On, 50% Off
+// @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
+// rolloutPercentage?: number;
