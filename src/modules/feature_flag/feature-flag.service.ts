@@ -17,6 +17,7 @@ import { FlagType } from '../../common/enums/flag-type.enum';
 import { VariantValueType } from '../../common/enums/variant-value-type.enum.js';
 import { FeatureFlagEnvironment } from './entities/feature-flag-environment.entity';
 import { Environment } from '../project/entities/environment.entity';
+import { Variant } from './entities/variant.entity';
 
 @Injectable()
 export class FeatureFlagService {
@@ -29,6 +30,8 @@ export class FeatureFlagService {
     private readonly ffEnvRepo: Repository<FeatureFlagEnvironment>,
     @InjectRepository(Environment)
     private readonly environmentRepo: Repository<Environment>,
+    @InjectRepository(Variant)
+    private readonly variantRepo: Repository<Variant>,
 
     private readonly dataSource: DataSource,
   ) {}
@@ -311,5 +314,28 @@ export class FeatureFlagService {
         createdBy: { id: true, firstName: true, lastName: true },
       },
     });
+  }
+
+  async findByIdOrThrow(id: string) {
+    const featureFlag = await this.featureFlagRepo.findOne({ where: { id } });
+    if (!featureFlag) {
+      throw new NotFoundException(`Feature flag with id "${id}" not found`);
+    }
+    return featureFlag;
+  }
+
+  async findVariantByIdOrThrow(variantId: string) {
+    const variant = await this.variantRepo.findOne({
+      where: {
+        id: variantId,
+      },
+    });
+
+    if (!variant) {
+      throw new NotFoundException(
+        `Feature flag with id "${variantId}" not found`,
+      );
+    }
+    return variant;
   }
 }

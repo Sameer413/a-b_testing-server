@@ -17,6 +17,6 @@ import { Environment } from '../project/entities/environment.entity';
     ],
     controllers: [FeatureFlagController],
     providers: [FeatureFlagService],
-    exports: [TypeOrmModule],
+    exports: [TypeOrmModule, FeatureFlagService],
 })
 export class FeatureFlagModule { }

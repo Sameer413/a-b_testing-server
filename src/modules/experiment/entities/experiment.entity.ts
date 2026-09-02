@@ -3,6 +3,7 @@ import { Column, Entity, JoinColumn, ManyToOne, OneToOne } from 'typeorm';
 import { FeatureFlag } from '../../feature_flag/entities/feature.flag.entity';
 import { Project } from '../../project/entities/project.entity';
 import { ExperimentStatus } from '../../../common/enums/experiment-status.enum';
+import { User } from 'src/modules/users/entities/user.entity';
 
 @Entity('experiments')
 export class Experiment extends BaseEntity {
@@ -74,8 +75,14 @@ export class Experiment extends BaseEntity {
 
     @OneToOne(() => FeatureFlag)
     @JoinColumn()
+    @JoinColumn({ name: 'feature_flag_id' })
     featureFlag!: FeatureFlag;
 
     @ManyToOne(() => Project)
+    @JoinColumn({ name: 'project_id' })
     project!: Project;
+
+    @ManyToOne(() => User)
+    @JoinColumn({ name: 'created_by' })
+    createdBy!: User;
 }
