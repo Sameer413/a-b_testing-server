@@ -9,6 +9,7 @@ import { Environment } from '../project/entities/environment.entity';
 import { SdkController } from './sdk.controller';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { SdkService } from './sdk.service';
+import { ExperimentModule } from '../experiment/experiment.module';
 
 @Module({
   imports: [
@@ -20,8 +21,9 @@ import { SdkService } from './sdk.service';
       Environment, // resolved from API key
     ]),
     CommonModule,
+    ExperimentModule
   ],
   controllers: [SdkController],
   providers: [TypeOrmModule, SdkService, ApiKeyGuard],
 })
-export class SdkModule {}
+export class SdkModule { }

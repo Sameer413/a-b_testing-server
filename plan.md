@@ -29,12 +29,12 @@ PHASE 2 — Evaluation Engine
 
 PHASE 3 — Experiments
 ----------------------------------
-[ ] Experiment
-[ ] Experiment status
-[ ] Experiment variants
-[ ] Experiment allocation
-[ ] Experiment targeting
-[ ] Experiment lifecycle
+[x] Experiment
+[x] Experiment status
+[x] Experiment variants
+[x] Experiment allocation
+[x] Experiment targeting
+[x] Experiment lifecycle
 
 
 PHASE 4 — Tracking

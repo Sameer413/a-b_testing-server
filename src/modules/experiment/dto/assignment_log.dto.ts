@@ -1,4 +1,5 @@
 import {
+  IsDate,
   IsNotEmpty,
   IsObject,
   IsOptional,
@@ -24,4 +25,8 @@ export class CreateAssignmentLogDto {
   @IsOptional()
   @IsObject()
   context?: Record<string, string | number | boolean> | null;
+
+  @IsOptional()
+  @IsDate()
+  assignedAt?: Date;
 }

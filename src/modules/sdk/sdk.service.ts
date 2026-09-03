@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FeatureFlag } from '../feature_flag/entities/feature.flag.entity';
@@ -13,6 +13,7 @@ import {
 import { createHash, randomInt } from 'crypto';
 import { FlagType } from 'src/common/enums/flag-type.enum';
 import { AllocationStrategy } from 'src/common/enums/allocation-strategy.enum';
+import { ExperimentService } from '../experiment/experiment.service';
 
 @Injectable()
 export class SdkService {
@@ -22,7 +23,10 @@ export class SdkService {
 
     @InjectRepository(FeatureFlagEnvironment)
     private readonly ffEnvRepo: Repository<FeatureFlagEnvironment>,
-  ) {}
+
+    @Inject()
+    private readonly experimentService: ExperimentService
+  ) { }
 
   async evaluate(dto: EvaluateDto, environment: Environment) {
     const flag = await this.flagRepo.findOne({
@@ -33,6 +37,9 @@ export class SdkService {
     if (!flag) {
       throw new NotFoundException(`Flag "${dto.flagKey}" not found`);
     }
+
+    // ── STEP 1.1: check for experiment running for this flag in this env ──────────────────────────────────────────
+    const experiment = await this.experimentService.findByFeatureFlagId(flag.id);
 
     const ffEnv = await this.ffEnvRepo.findOne({
       where: {
@@ -88,7 +95,21 @@ export class SdkService {
       flag.hashSalt,
     );
 
-    return this.buildResponse(dto.flagKey, true, variant, 'MATCH');
+    // STEP 7: Create assignment log -- only for experiments | Ignore for boolean flags
+    if (experiment && flag.flagType !== FlagType.BOOLEAN) {
+      await this.experimentService.createAssignmentLog({
+        userId: dto.userId,
+        featureFlagId: flag.id,
+        variantId: variant?.id,
+        experimentId: experiment?.id,
+        assignedAt: new Date(),
+        context: dto.userAttributes,
+      });
+    }
+
+    return this.buildResponse(dto.flagKey, true, variant, 'MATCH',
+      //  { experimentId: experiment?.id, variantId: variant?.id, featureFlagId: flag?.id, assignAt: new Date() }
+    );
   }
 
   // ── Targeting Rules Engine ─────────────────────────────────────────────────
@@ -193,6 +214,7 @@ export class SdkService {
     enabled: boolean,
     variant: Variant | null,
     reason: string,
+    props?: any
   ) {
     return {
       flagKey,
@@ -201,6 +223,7 @@ export class SdkService {
       value: variant?.value ?? null,
       valueType: variant?.valueType ?? null,
       reason,
+      props
     };
   }
 }

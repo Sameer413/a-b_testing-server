@@ -18,6 +18,6 @@ import { CommonModule } from 'src/common/common.module';
   ],
   controllers: [ExperimentController],
   providers: [ExperimentService],
-  exports: [TypeOrmModule],
+  exports: [TypeOrmModule, ExperimentService],
 })
-export class ExperimentModule {}
+export class ExperimentModule { }

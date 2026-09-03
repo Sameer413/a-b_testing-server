@@ -5,9 +5,9 @@ import { Variant } from '../../feature_flag/entities/variant.entity';
 import { Experiment } from './experiment.entity';
 
 @Entity('assignment_logs')
-@Index(['userId', 'featureFlagId'], { unique: true })
-@Index(['featureFlagId', 'variantId'])
-@Index(['assignedAt'])
+// @Index(['userId', 'featureFlagId'], { unique: true })
+// @Index(['featureFlagId', 'variantId'])
+// @Index(['assignedAt'])
 export class AssignmentLog extends BaseEntity {
 
     /**
