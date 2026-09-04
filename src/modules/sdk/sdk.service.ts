@@ -14,6 +14,7 @@ import { createHash, randomInt } from 'crypto';
 import { FlagType } from 'src/common/enums/flag-type.enum';
 import { AllocationStrategy } from 'src/common/enums/allocation-strategy.enum';
 import { ExperimentService } from '../experiment/experiment.service';
+import { TrackingService } from '../tracking/tracking.service';
 
 @Injectable()
 export class SdkService {
@@ -25,7 +26,10 @@ export class SdkService {
     private readonly ffEnvRepo: Repository<FeatureFlagEnvironment>,
 
     @Inject()
-    private readonly experimentService: ExperimentService
+    private readonly experimentService: ExperimentService,
+
+    @Inject()
+    private readonly trackingService: TrackingService
   ) { }
 
   async evaluate(dto: EvaluateDto, environment: Environment) {
@@ -106,6 +110,24 @@ export class SdkService {
         context: dto.userAttributes,
       });
     }
+
+    // Setp 8 (New): Record exposure event
+    if (flag.flagType !== FlagType.BOOLEAN && experiment) {
+      await this.trackingService.trackEvent({
+        userId: dto.userId,
+        flagKey: dto.flagKey,
+        eventType: "$exposure",
+        variantId: variant?.id,
+        metadata: {
+          experimentId: experiment.id,
+          assignedVariantId: variant?.id,
+        },
+        occurredAt: new Date().toISOString(),
+        eventId: `exp:${dto.userId}:${flag.id}:${variant.id}`, // deterministic key for assignment log
+      }, environment);
+    }
+
+
 
     return this.buildResponse(dto.flagKey, true, variant, 'MATCH',
       //  { experimentId: experiment?.id, variantId: variant?.id, featureFlagId: flag?.id, assignAt: new Date() }

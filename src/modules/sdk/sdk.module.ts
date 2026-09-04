@@ -10,6 +10,7 @@ import { SdkController } from './sdk.controller';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { SdkService } from './sdk.service';
 import { ExperimentModule } from '../experiment/experiment.module';
+import { TrackingModule } from '../tracking/tracking.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ExperimentModule } from '../experiment/experiment.module';
       Variant, // to pick variant
       Environment, // resolved from API key
     ]),
+    TrackingModule,
     CommonModule,
     ExperimentModule
   ],

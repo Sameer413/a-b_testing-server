@@ -39,11 +39,11 @@ PHASE 3 — Experiments
 
 PHASE 4 — Tracking
 ----------------------------------
-[ ] Events
-[ ] Exposure
-[ ] Conversion
-[ ] Event ingestion
-[ ] Deduplication
+[x] Events            → Domain model & DTOs for tracking any user action
+[x] Exposure          → Recording when a user actually sees/experiences a variant
+[x] Conversion        → Tracking goal actions (e.g. click, purchase, signup) tied to metrics
+[x] Event ingestion   → Fast SDK endpoint (single & batch) authenticated via API key
+[x] Deduplication     → Idempotency keys & unique user conversion handling
 
 
 PHASE 5 — Analytics

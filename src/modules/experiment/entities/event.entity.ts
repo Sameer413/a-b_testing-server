@@ -27,7 +27,7 @@ export class Event extends BaseEntity {
   variant!: Variant;
 
   @Column({ nullable: true })
-  variantId!: string;
+  variantId?: string;
 
   @ManyToOne(() => Environment, { onDelete: 'CASCADE' })
   environment!: Environment;
@@ -60,4 +60,7 @@ export class Event extends BaseEntity {
 
   @Column({ type: 'timestamptz' })
   occurredAt!: Date;
+
+  @Column({ type: 'varchar', length: 128, unique: true, nullable: true })
+  idempotencyKey?: string | null;
 }

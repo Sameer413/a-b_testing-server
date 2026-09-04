@@ -22,6 +22,7 @@ import { FeatureFlagModule } from './modules/feature_flag/feature-flag.module';
 import { ApiKeysModule } from './modules/api_keys/api-keys.module';
 import { ExperimentModule } from './modules/experiment/experiment.module';
 import { SdkModule } from './modules/sdk/sdk.module';
+import { TrackingModule } from './modules/tracking/tracking.module';
 import { RedisModule } from './database/redis/redis.module';
 
 @Module({
@@ -50,6 +51,7 @@ import { RedisModule } from './database/redis/redis.module';
     ApiKeysModule,
     ExperimentModule,
     SdkModule,
+    TrackingModule,
   ],
   providers: [
     {
