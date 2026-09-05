@@ -49,6 +49,11 @@ export class ExperimentService {
   async findByIdOrThrow(id: string) {
     const experiment = await this.experimentRepository.findOne({
       where: { id },
+      relations: {
+        featureFlag: { variants: true },
+        project: true,
+        createdBy: true,
+      },
     });
     if (!experiment) {
       throw new NotFoundException(`Experiment with id "${id}" not found`);
@@ -66,7 +71,14 @@ export class ExperimentService {
   }
 
   async startExperiment(experimentId: string) {
-    const experiment = await this.findByIdOrThrow(experimentId);
+    // Load with featureFlag + variants — required for the checks below
+    const experiment = await this.experimentRepository.findOne({
+      where: { id: experimentId },
+      relations: { featureFlag: { variants: true } },
+    });
+    if (!experiment) {
+      throw new NotFoundException(`Experiment with id "${experimentId}" not found`);
+    }
     if (experiment.status === ExperimentStatus.RUNNING) {
       throw new BadRequestException('Experiment is already running');
     }

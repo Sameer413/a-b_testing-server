@@ -50,6 +50,15 @@ export class CreateVariantDto {
   @IsOptional()
   @IsEnum(VariantValueType)
   valueType: VariantValueType = VariantValueType.STRING;
+
+  /**
+   * Marks this variant as the control (baseline) group.
+   * Only one variant per flag should be marked as control.
+   * Used by the analytics engine to compute lift and significance.
+   */
+  @IsOptional()
+  @IsBoolean()
+  isControl?: boolean;
 }
 
 export class CreateFeatureFlagEnvironmentDto {

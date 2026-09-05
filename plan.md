@@ -48,13 +48,13 @@ PHASE 4 — Tracking
 
 PHASE 5 — Analytics
 ----------------------------------
-[ ] Metric
-[ ] Conversion rate
-[ ] Sample size
-[ ] Confidence interval
-[ ] Statistical significance
-[ ] Lift
-[ ] Guardrail metrics
+[x] Metric
+[x] Conversion rate
+[x] Sample size
+[x] Confidence interval
+[x] Statistical significance
+[x] Lift
+[x] Guardrail metrics
 
 
 PHASE 6 — Production

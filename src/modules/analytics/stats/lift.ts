@@ -10,3 +10,18 @@
 // │   └── lift.ts                   ← (pB - pA) / pA * 100
 // └── dto/
 //     └── experiment-results.dto.ts ← response shape
+
+
+/**
+ * Relative lift of the treatment over the control.
+ * lift = (treatment - control) / control × 100
+ *
+ * @returns percentage lift (e.g. 12.5 means +12.5%), or null if control rate is 0.
+ */
+export function relativeLift(
+    controlRate: number,
+    treatmentRate: number,
+): number | null {
+    if (controlRate === 0) return null;
+    return ((treatmentRate - controlRate) / controlRate) * 100;
+}

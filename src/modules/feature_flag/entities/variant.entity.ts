@@ -39,4 +39,7 @@ export class Variant extends BaseEntity {
         flag => flag.variants,
     )
     featureFlag!: FeatureFlag;
+
+    @Column({ type: 'boolean', default: false })
+    isControl!: boolean;
 }

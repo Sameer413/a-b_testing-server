@@ -117,12 +117,14 @@ export class FeatureFlagService {
                 weight: 100,
                 value: 'true',
                 valueType: VariantValueType.BOOLEAN,
+                isControl: true,   // 'On' is always the control baseline for boolean flags
               },
               {
                 name: 'Off',
                 weight: 0,
                 value: 'false',
                 valueType: VariantValueType.BOOLEAN,
+                isControl: false,
               },
             ]
           : (dto.variants ?? []).map((variant) => ({
@@ -130,6 +132,7 @@ export class FeatureFlagService {
               weight: variant.weight,
               value: variant.value,
               valueType: variant.valueType,
+              isControl: variant.isControl ?? false,
             }));
 
       // --------------------------------------------------

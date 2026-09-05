@@ -24,6 +24,7 @@ import { ExperimentModule } from './modules/experiment/experiment.module';
 import { SdkModule } from './modules/sdk/sdk.module';
 import { TrackingModule } from './modules/tracking/tracking.module';
 import { RedisModule } from './database/redis/redis.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { RedisModule } from './database/redis/redis.module';
     ExperimentModule,
     SdkModule,
     TrackingModule,
+    AnalyticsModule,
   ],
   providers: [
     {
