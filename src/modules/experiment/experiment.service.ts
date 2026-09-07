@@ -9,6 +9,7 @@ import { User } from '../users/entities/user.entity';
 import { CreateAssignmentLogDto } from './dto/assignment_log.dto';
 import { AssignmentLog } from './entities/assignment-log.entity';
 import { ExperimentStatus } from 'src/common/enums/experiment-status.enum';
+import { RedisService } from 'src/database/redis/redis.service';
 
 @Injectable()
 export class ExperimentService {
@@ -23,6 +24,9 @@ export class ExperimentService {
 
     @Inject(FeatureFlagService)
     private readonly featureFlagService: FeatureFlagService,
+
+    @Inject()
+    private readonly redisService: RedisService,
   ) { }
 
   async createExperiment(
@@ -177,7 +181,13 @@ export class ExperimentService {
 
   // Assignment Log
   async createAssignmentLog(dto: CreateAssignmentLogDto) {
-    // Check if assignment already exists for this user and feature flag
+    const cacheKey = `assign:${dto.userId}:${dto.featureFlagId}`;
+
+    // ── Fast path: Redis EXISTS check — 0 DB queries for returning users ──────
+    const alreadyAssigned = await this.redisService.exists(cacheKey);
+    if (alreadyAssigned) return;
+
+    // ── DB fallback: cold cache or first-ever call ─────────────────────────────
     const existing = await this.assignmentLogRepo.findOne({
       where: {
         userId: dto.userId,
@@ -185,38 +195,47 @@ export class ExperimentService {
       },
     });
     if (existing) {
-      return existing; // Already assigned, skip duplicate insert
+      // Backfill cache so subsequent calls are free
+      await this.redisService.set(cacheKey, '1', 86400); // 24 h
+      return existing;
     }
 
-    const featureFlag = await this.featureFlagService.findByIdOrThrow(
-      dto.featureFlagId,
-    );
+    // ── Use pre-resolved entities from SdkService (avoid redundant DB fetches) ─
+    const featureFlag =
+      dto.resolvedFlag ??
+      (await this.featureFlagService.findByIdOrThrow(dto.featureFlagId));
 
-    const variant = dto.variantId
-      ? await this.featureFlagService.findVariantByIdOrThrow(dto.variantId)
-      : null;
+    const variant =
+      dto.resolvedVariant !== undefined
+        ? dto.resolvedVariant
+        : dto.variantId
+          ? await this.featureFlagService.findVariantByIdOrThrow(dto.variantId)
+          : null;
 
     const assignmentLog = this.assignmentLogRepo.create({
       userId: dto.userId,
       featureFlag: { id: featureFlag.id, name: featureFlag.name },
       experiment: { id: dto.experimentId },
-      variant: {
-        id: variant?.id,
-        name: variant?.name,
-        value: variant?.value,
-        valueType: variant?.valueType,
-      },
+      variant: variant
+        ? {
+            id: variant.id,
+            name: variant.name,
+            value: variant.value,
+            valueType: variant.valueType,
+          }
+        : undefined,
       assignedAt: dto.assignedAt || new Date(),
       context: dto.context,
     });
 
     try {
-      return await this.assignmentLogRepo.save(assignmentLog);
+      const saved = await this.assignmentLogRepo.save(assignmentLog);
+      // Mark as assigned in cache after successful insert
+      await this.redisService.set(cacheKey, '1', 86400); // 24 h
+      return saved;
     } catch (err: any) {
-      // Catch race condition constraint violation gracefully
-      if (err.code === '23505') {
-        return;
-      }
+      // Catch race-condition unique-constraint violation gracefully
+      if (err.code === '23505') return;
       throw err;
     }
   }

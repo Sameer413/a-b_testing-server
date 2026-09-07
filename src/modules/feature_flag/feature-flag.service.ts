@@ -18,6 +18,7 @@ import { VariantValueType } from '../../common/enums/variant-value-type.enum.js'
 import { FeatureFlagEnvironment } from './entities/feature-flag-environment.entity';
 import { Environment } from '../project/entities/environment.entity';
 import { Variant } from './entities/variant.entity';
+import { RedisService } from 'src/database/redis/redis.service';
 
 @Injectable()
 export class FeatureFlagService {
@@ -32,6 +33,9 @@ export class FeatureFlagService {
     private readonly environmentRepo: Repository<Environment>,
     @InjectRepository(Variant)
     private readonly variantRepo: Repository<Variant>,
+
+    @Inject()
+    private readonly redisService: RedisService,
 
     private readonly dataSource: DataSource,
   ) {}
@@ -60,7 +64,7 @@ export class FeatureFlagService {
     project: Project,
     user: User,
   ) {
-    return this.dataSource.transaction(async (manager) => {
+    const result = this.dataSource.transaction(async (manager) => {
       // --------------------------------------------------
       // 1. Validate environments if provided
       // --------------------------------------------------
@@ -117,7 +121,7 @@ export class FeatureFlagService {
                 weight: 100,
                 value: 'true',
                 valueType: VariantValueType.BOOLEAN,
-                isControl: true,   // 'On' is always the control baseline for boolean flags
+                isControl: true, // 'On' is always the control baseline for boolean flags
               },
               {
                 name: 'Off',
@@ -238,25 +242,44 @@ export class FeatureFlagService {
         },
       });
     });
+
+    await this.invalidateFlagsCache(project.id);
+
+    return result;
+  }
+
+  // ── Cache key ──────────────────────────────────────────────────────────────
+  private flagListCacheKey(projectId: string): string {
+    return `flags:project:${projectId}`;
+  }
+
+  // ── Invalidation helper — call from all write paths ────────────────────────
+  async invalidateFlagsCache(projectId: string): Promise<void> {
+    await this.redisService.del(this.flagListCacheKey(projectId));
   }
 
   async listFeatureFlags(id: string) {
-    return this.featureFlagRepo.find({
-      where: {
-        project: { id: id },
-      },
-      relations: {
-        project: {
-          environments: true,
-        },
-        createdBy: true,
-        variants: true,
-      },
-      select: {
-        project: { id: true, name: true },
-        createdBy: { id: true, firstName: true, lastName: true },
-      },
-    });
+    return this.redisService.cacheAside(
+      this.flagListCacheKey(id),
+      async () =>
+        this.featureFlagRepo.find({
+          where: {
+            project: { id: id },
+          },
+          relations: {
+            project: {
+              environments: true,
+            },
+            createdBy: true,
+            variants: true,
+          },
+          select: {
+            project: { id: true, name: true },
+            createdBy: { id: true, firstName: true, lastName: true },
+          },
+        }),
+      30,
+    );
   }
 
   async createFeatureFlagKey(key: string, project: Project) {

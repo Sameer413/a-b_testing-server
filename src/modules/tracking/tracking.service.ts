@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { Event } from '../experiment/entities/event.entity';
 import { FeatureFlag } from '../feature_flag/entities/feature.flag.entity';
 import { Environment } from '../project/entities/environment.entity';
 import { BatchTrackEventsDto, TrackEventDto } from './dto/track-event.dto';
+import { RedisService } from 'src/database/redis/redis.service';
 
 const BATCH_MAX = 500;
 
@@ -20,7 +22,10 @@ export class TrackingService {
 
     @InjectRepository(FeatureFlag)
     private readonly flagRepo: Repository<FeatureFlag>,
-  ) { }
+
+    @Inject()
+    private readonly redisService: RedisService,
+  ) {}
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -36,8 +41,19 @@ export class TrackingService {
       );
     }
 
-    const events = await Promise.all(
-      dto.events.map((e) => this.buildEvent(e, environment)),
+    // ── Optimization: deduplicate flagKeys BEFORE hitting cache/DB ──────────
+    // 500 events with 3 unique flagKeys → only 3 cache lookups
+    const uniqueFlagKeys = [...new Set(dto.events.map((e) => e.flagKey))];
+    const flagMap = new Map<string, FeatureFlag>();
+    await Promise.all(
+      uniqueFlagKeys.map(async (flagKey) => {
+        const flag = await this.resolveFlag(flagKey, environment); // cache hit for repeats
+        flagMap.set(flagKey, flag);
+      }),
+    );
+
+    const events = dto.events.map((e) =>
+      this.buildEventFromFlag(e, environment, flagMap.get(e.flagKey)!),
     );
 
     return this.upsertEvents(events);
@@ -55,17 +71,25 @@ export class TrackingService {
   ): Promise<Partial<Event>> {
     const flag = await this.resolveFlag(dto.flagKey, environment);
 
+    return this.buildEventFromFlag(dto, environment, flag);
+  }
+
+  private buildEventFromFlag(
+    dto: TrackEventDto,
+    environment: Environment,
+    flag: FeatureFlag,
+  ): Partial<Event> {
     return {
       userId: dto.userId,
       featureFlagId: flag.id,
       featureFlag: flag as FeatureFlag,
-      environmentId: environment.id, // always from API key — never trusted from client
+      environmentId: environment.id,
       environment,
       eventType: dto.eventType,
       variantId: dto.variantId,
       eventValue: dto.eventValue ?? null,
       metadata: dto.metadata ?? null,
-      idempotencyKey: dto.eventId ?? null, // eventId in DTO = idempotencyKey in DB
+      idempotencyKey: dto.eventId ?? null,
       occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date(),
     };
   }
@@ -101,6 +125,10 @@ export class TrackingService {
     };
   }
 
+  // ── Cache key ────────────────────────────────────────────────────────────────
+  private flagIdCacheKey(flagKey: string, projectId: string): string {
+    return `flag:id:${flagKey}:proj:${projectId}`;
+  }
   /**
    * Resolves a flagKey to a FeatureFlag entity, scoped to the project
    * that owns the environment derived from the API key.
@@ -112,10 +140,19 @@ export class TrackingService {
     flagKey: string,
     environment: Environment,
   ): Promise<FeatureFlag> {
-    const flag = await this.flagRepo.findOne({
-      where: { key: flagKey, project: { id: environment.project.id } },
-      select: { id: true, key: true },
-    });
+    const cacheKey = this.flagIdCacheKey(flagKey, environment.project.id);
+
+    const flag = await this.redisService.cacheAside(
+      cacheKey,
+      async () => {
+        const found = await this.flagRepo.findOne({
+          where: { key: flagKey, project: { id: environment.project.id } },
+          select: { id: true, key: true },
+        });
+        return found ?? null;
+      },
+      300, // TTL: 5 minutes — flags rarely renamed/deleted
+    );
 
     if (!flag) {
       throw new NotFoundException(

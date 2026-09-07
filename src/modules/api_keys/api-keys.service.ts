@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { Environment } from '../project/entities/environment.entity';
 import { createHash, randomBytes } from 'crypto';
 import { GenerateApiKeyDto } from './dto/generate-api-key.dto';
 import { Project } from '../project/entities/project.entity';
+import { RedisService } from 'src/database/redis/redis.service';
 
 @Injectable()
 export class ApiKeysService {
@@ -18,7 +20,9 @@ export class ApiKeysService {
     private readonly apiKeyRepo: Repository<ApiKey>,
     @InjectRepository(Environment)
     private readonly environmentRepo: Repository<Environment>,
-  ) {}
+    @Inject()
+    private readonly redisService: RedisService,
+  ) { }
 
   /** Known prefixes for default environments; custom ones get a generic prefix. */
   private readonly knownPrefixes: Record<string, string> = {
@@ -88,6 +92,10 @@ export class ApiKeysService {
     }
     apiKey.active = false;
     await this.apiKeyRepo.save(apiKey);
+
+    // Bust the Redis cache so the guard rejects this key immediately
+    await this.redisService.del(`apiKey:${apiKey.key}`);
+
     return { message: `API key revoked successfully` };
   }
 

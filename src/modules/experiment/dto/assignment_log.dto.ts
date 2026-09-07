@@ -6,6 +6,8 @@ import {
   IsString,
   IsUUID,
 } from 'class-validator';
+import { FeatureFlag } from '../../feature_flag/entities/feature.flag.entity';
+import { Variant } from '../../feature_flag/entities/variant.entity';
 
 export class CreateAssignmentLogDto {
   @IsString()
@@ -29,4 +31,11 @@ export class CreateAssignmentLogDto {
   @IsOptional()
   @IsDate()
   assignedAt?: Date;
+
+  /**
+   * Pre-resolved entities passed from SdkService to avoid redundant DB fetches.
+   * Not validated by class-validator — internal use only.
+   */
+  resolvedFlag?: FeatureFlag;
+  resolvedVariant?: Variant | null;
 }

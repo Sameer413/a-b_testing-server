@@ -33,3 +33,5 @@ export class SdkController {
     return this.responseService.success(result, 'Flag evaluated');
   }
 }
+
+//   "eventId": "hashEventId", // hash(userId + flagKey + eventType + sessionId + sequenceNumber)

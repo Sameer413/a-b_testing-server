@@ -15,6 +15,7 @@ import { FlagType } from 'src/common/enums/flag-type.enum';
 import { AllocationStrategy } from 'src/common/enums/allocation-strategy.enum';
 import { ExperimentService } from '../experiment/experiment.service';
 import { TrackingService } from '../tracking/tracking.service';
+import { RedisService } from 'src/database/redis/redis.service';
 
 @Injectable()
 export class SdkService {
@@ -29,32 +30,55 @@ export class SdkService {
     private readonly experimentService: ExperimentService,
 
     @Inject()
-    private readonly trackingService: TrackingService
-  ) { }
+    private readonly trackingService: TrackingService,
+
+    @Inject()
+    private readonly redisService: RedisService,
+  ) {}
+
+  // ── Cache key helper ───────────────────────────────────────────────────────
+  private flagCacheKey(flagKey: string, envId: string): string {
+    return `flag:${flagKey}:env:${envId}`;
+  }
+  // ── Cache invalidation (call this from flag/env/experiment write paths) ────
+  // async invalidateFlagCache(flagKey: string, envId: string): Promise<void> {
+  //   await this.redisService.del(this.flagCacheKey(flagKey, envId));
+  // }
+  // In FeatureFlagService.update(), FeatureFlagEnvironment.toggle(), ExperimentService.start/stop()
+  // await this.sdkService.invalidateFlagCache(flagKey, envId);
+  // or inject RedisService directly and call del()
 
   async evaluate(dto: EvaluateDto, environment: Environment) {
-    const flag = await this.flagRepo.findOne({
-      where: { key: dto.flagKey, project: { id: environment.project.id } },
-      relations: { variants: true },
-    });
+    const cacheKey = this.flagCacheKey(dto.flagKey, environment.project.id);
 
-    if (!flag) {
+    const config = await this.redisService.cacheAside(
+      cacheKey,
+      async () => {
+        const flag = await this.flagRepo.findOne({
+          where: { key: dto.flagKey, project: { id: environment.project.id } },
+          relations: { variants: true },
+        });
+        if (!flag) return null; // cache null-miss separately below
+        const [experiment, ffEnv] = await Promise.all([
+          this.experimentService.findByFeatureFlagId(flag.id),
+          this.ffEnvRepo.findOne({
+            where: {
+              featureFlag: { id: flag.id },
+              environment: { id: environment.id },
+            },
+          }),
+        ]);
+
+        return { flag, experiment, ffEnv };
+      },
+      30, // TTL: 30 seconds
+    );
+
+    if (!config || !config.flag) {
       throw new NotFoundException(`Flag "${dto.flagKey}" not found`);
     }
 
-    // ── STEP 1.1: check for experiment running for this flag in this env ──────────────────────────────────────────
-    const experiment = await this.experimentService.findByFeatureFlagId(flag.id);
-
-    const ffEnv = await this.ffEnvRepo.findOne({
-      where: {
-        featureFlag: {
-          id: flag.id,
-        },
-        environment: {
-          id: environment.id,
-        },
-      },
-    });
+    const { flag, experiment, ffEnv } = config;
 
     // ── STEP 2: Global kill switch ─────────────────────────────────────────
     if (!flag.enabled) {
@@ -108,28 +132,35 @@ export class SdkService {
         experimentId: experiment?.id,
         assignedAt: new Date(),
         context: dto.userAttributes,
+        resolvedFlag: flag,       // already in memory — skip re-fetch in ExperimentService
+        resolvedVariant: variant, // already in memory — skip re-fetch in ExperimentService
       });
     }
 
     // Setp 8 (New): Record exposure event
     if (flag.flagType !== FlagType.BOOLEAN && experiment) {
-      await this.trackingService.trackEvent({
-        userId: dto.userId,
-        flagKey: dto.flagKey,
-        eventType: "$exposure",
-        variantId: variant?.id,
-        metadata: {
-          experimentId: experiment.id,
-          assignedVariantId: variant?.id,
+      await this.trackingService.trackEvent(
+        {
+          userId: dto.userId,
+          flagKey: dto.flagKey,
+          eventType: '$exposure',
+          variantId: variant?.id,
+          metadata: {
+            experimentId: experiment.id,
+            assignedVariantId: variant?.id,
+          },
+          occurredAt: new Date().toISOString(),
+          eventId: `exp:${dto.userId}:${flag.id}:${variant.id}`, // deterministic key for assignment log
         },
-        occurredAt: new Date().toISOString(),
-        eventId: `exp:${dto.userId}:${flag.id}:${variant.id}`, // deterministic key for assignment log
-      }, environment);
+        environment,
+      );
     }
 
-
-
-    return this.buildResponse(dto.flagKey, true, variant, 'MATCH',
+    return this.buildResponse(
+      dto.flagKey,
+      true,
+      variant,
+      'MATCH',
       //  { experimentId: experiment?.id, variantId: variant?.id, featureFlagId: flag?.id, assignAt: new Date() }
     );
   }
@@ -236,7 +267,7 @@ export class SdkService {
     enabled: boolean,
     variant: Variant | null,
     reason: string,
-    props?: any
+    props?: any,
   ) {
     return {
       flagKey,
@@ -245,7 +276,7 @@ export class SdkService {
       value: variant?.value ?? null,
       valueType: variant?.valueType ?? null,
       reason,
-      props
+      props,
     };
   }
 }

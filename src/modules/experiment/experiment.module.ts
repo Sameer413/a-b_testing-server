@@ -8,6 +8,7 @@ import { ProjectModule } from '../project/project.module';
 import { FeatureFlagModule } from '../feature_flag/feature-flag.module';
 import { ExperimentController } from './experiment.controller';
 import { CommonModule } from 'src/common/common.module';
+import { RedisModule } from 'src/database/redis/redis.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { CommonModule } from 'src/common/common.module';
     CommonModule,
     ProjectModule,
     FeatureFlagModule,
+    RedisModule,
   ],
   controllers: [ExperimentController],
   providers: [ExperimentService],
