@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -7,7 +8,7 @@ import { User } from '../users/entities/user.entity';
 import { CreateFeatureFlagRequestDto } from './dto/feature-flag.dto';
 import { randomBytes } from 'crypto';
 
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { FeatureFlag } from './entities/feature.flag.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ProjectService } from '../project/project.service';
@@ -19,6 +20,10 @@ import { FeatureFlagEnvironment } from './entities/feature-flag-environment.enti
 import { Environment } from '../project/entities/environment.entity';
 import { Variant } from './entities/variant.entity';
 import { RedisService } from 'src/database/redis/redis.service';
+import { UpdateFeatureFlagDto } from './dto/update-feature-flag.dto';
+import { ExperimentStatus } from 'src/common/enums/experiment-status.enum';
+import { Experiment } from '../experiment/entities/experiment.entity';
+import { ToggleFlagEnvironmentDto } from './dto/toggle-flag.dto';
 
 @Injectable()
 export class FeatureFlagService {
@@ -33,6 +38,8 @@ export class FeatureFlagService {
     private readonly environmentRepo: Repository<Environment>,
     @InjectRepository(Variant)
     private readonly variantRepo: Repository<Variant>,
+    @InjectRepository(Experiment)
+    private readonly experimentRepo: Repository<Experiment>,
 
     @Inject()
     private readonly redisService: RedisService,
@@ -248,6 +255,92 @@ export class FeatureFlagService {
     return result;
   }
 
+  // Test latter
+  async updateFeatureFlag(
+    flagId: string,
+    projectId: string,
+    dto: UpdateFeatureFlagDto,
+  ) {
+    const flag = await this.featureFlagRepo.findOne({
+      where: { id: flagId, project: { id: projectId } },
+      relations: {
+        project: true,
+        variants: true,
+        environmentOverrides: { environment: true },
+      },
+    });
+
+    if (!flag) {
+      throw new NotFoundException(
+        `Feature flag with id "${flagId}" not found in this project`,
+      );
+    }
+
+    // 2. Guard: block experiment-sensitive fields if a RUNNING experiment exists
+    const experimentSensitiveFields: (keyof UpdateFeatureFlagDto)[] = [
+      'enabled',
+      'targetingRules',
+      'allocationStrategy',
+    ];
+    const isChangingSensitiveField = experimentSensitiveFields.some(
+      (field) => dto[field] !== undefined,
+    );
+
+    if (isChangingSensitiveField) {
+      const runningExperiment = await this.experimentRepo.findOne({
+        where: {
+          featureFlag: { id: flagId },
+          status: ExperimentStatus.RUNNING,
+        },
+      });
+      if (runningExperiment) {
+        throw new ConflictException(
+          `Cannot update experiment-sensitive fields while experiment "${runningExperiment.name}" is running. ` +
+            `Pause or end the experiment first.`,
+        );
+      }
+    }
+
+    // 3. Apply partial updates (only provided fields)
+    if (dto.name !== undefined) flag.name = dto.name;
+    if (dto.description !== undefined) flag.description = dto.description;
+    if (dto.enabled !== undefined) flag.enabled = dto.enabled;
+    if (dto.allocationStrategy !== undefined)
+      flag.allocationStrategy = dto.allocationStrategy;
+    // targetingRules: null explicitly removes targeting, undefined means "don't change"
+    if (dto.targetingRules !== undefined) {
+      flag.targetingRules = dto.targetingRules;
+    }
+    // 4. Save
+    const saved = await this.featureFlagRepo.save(flag);
+
+    // 5. Cache invalidation
+    // Invalidate the project-level flag list cache
+    await this.invalidateFlagsCache(projectId);
+
+    // Invalidate per-flag SDK caches (each env has its own cache key)
+    if (flag.environmentOverrides?.length) {
+      const sdkCacheKeys = flag.environmentOverrides.map(
+        (eo) => `flag:${flag.key}:env:${eo.environment?.id ?? projectId}`,
+      );
+      await this.redisService.del(...sdkCacheKeys);
+    }
+    // 6. Return fresh data with all relations
+    return this.featureFlagRepo.findOne({
+      where: { id: saved.id },
+      relations: {
+        variants: true,
+        environmentOverrides: { environment: true },
+        project: true,
+        createdBy: true,
+      },
+      select: {
+        project: { id: true, name: true },
+        createdBy: { id: true, firstName: true, lastName: true },
+      },
+    })!;
+  }
+
   // ── Cache key ──────────────────────────────────────────────────────────────
   private flagListCacheKey(projectId: string): string {
     return `flags:project:${projectId}`;
@@ -363,5 +456,168 @@ export class FeatureFlagService {
       );
     }
     return variant;
+  }
+
+  async getFeatureFlagById(flagId: string) {
+    const flag = await this.featureFlagRepo.findOne({
+      where: {
+        id: flagId,
+      },
+      relations: {
+        variants: true,
+        environmentOverrides: true,
+      },
+    });
+
+    if (!flag) {
+      throw new NotFoundException(`Flag not found with id: ${flagId}`);
+    }
+
+    return flag;
+  }
+
+  async getFeatureFlag(
+    flagId: string,
+    projectId: string,
+  ): Promise<FeatureFlag> {
+    const flag = await this.featureFlagRepo.findOne({
+      where: {
+        id: flagId,
+        project: { id: projectId },
+        deletedAt: IsNull(), // exclude soft-deleted
+      },
+      relations: {
+        variants: true,
+        environmentOverrides: { environment: true },
+        project: true,
+        createdBy: true,
+      },
+      select: {
+        project: { id: true, name: true },
+        createdBy: { id: true, firstName: true, lastName: true },
+      },
+    });
+    if (!flag) {
+      throw new NotFoundException(
+        `Feature flag with id "${flagId}" not found in this project`,
+      );
+    }
+    return flag;
+  }
+
+  // ── Soft Delete Feature Flag ──────────────────────────────────────────────────
+
+  async deleteFeatureFlag(flagId: string, projectId: string): Promise<void> {
+    // 1. Load flag scoped to project
+    const flag = await this.featureFlagRepo.findOne({
+      where: {
+        id: flagId,
+        project: { id: projectId },
+        deletedAt: IsNull(),
+      },
+      relations: { environmentOverrides: { environment: true } },
+    });
+
+    if (!flag) {
+      throw new NotFoundException(
+        `Feature flag with id "${flagId}" not found in this project`,
+      );
+    }
+
+    // 2. Block deletion if a RUNNING experiment is attached
+    const runningExperiment = await this.experimentRepo.findOne({
+      where: {
+        featureFlag: { id: flagId },
+        status: ExperimentStatus.RUNNING,
+      },
+    });
+
+    if (runningExperiment) {
+      throw new ConflictException(
+        `Cannot delete flag while experiment "${runningExperiment.name}" is running. ` +
+          `End the experiment first.`,
+      );
+    }
+
+    // 3. Soft delete
+    flag.deletedAt = new Date();
+    await this.featureFlagRepo.save(flag);
+
+    // 4. Invalidate all caches
+    await this.invalidateFlagsCache(projectId);
+
+    // Invalidate per-env SDK caches
+    if (flag.environmentOverrides?.length) {
+      const sdkCacheKeys = flag.environmentOverrides.map(
+        (eo) => `flag:${flag.key}:env:${eo.environment?.id ?? projectId}`,
+      );
+      await this.redisService.del(...sdkCacheKeys);
+    }
+  }
+
+  // ── Toggle Flag per Environment ───────────────────────────────────────────────
+  // Test Latter
+  async toggleFlagEnvironment(
+    flagId: string,
+    projectId: string,
+    dto: ToggleFlagEnvironmentDto,
+  ): Promise<FeatureFlagEnvironment> {
+    // 1. Verify the flag belongs to this project
+    const flag = await this.featureFlagRepo.findOne({
+      where: { id: flagId, project: { id: projectId } },
+    });
+
+    if (!flag) {
+      throw new NotFoundException(
+        `Feature flag with id "${flagId}" not found in this project`,
+      );
+    }
+
+    // 2. Verify the environment belongs to this project
+    const environment = await this.environmentRepo.findOne({
+      where: { id: dto.environmentId, project: { id: projectId } },
+    });
+
+    if (!environment) {
+      throw new NotFoundException(
+        `Environment with id "${dto.environmentId}" not found in this project`,
+      );
+    }
+
+    // 3. Find or create the FeatureFlagEnvironment record
+    let ffEnv = await this.ffEnvRepo.findOne({
+      where: {
+        featureFlag: { id: flagId },
+        environment: { id: dto.environmentId },
+      },
+      relations: { environment: true, featureFlag: true },
+    });
+
+    if (!ffEnv) {
+      // Auto-create if the flag exists but wasn't linked to this env yet
+      ffEnv = this.ffEnvRepo.create({
+        featureFlag: flag,
+        environment,
+        enabled: dto.enabled ?? false,
+        rolloutPercentage: dto.rolloutPercentage ?? 100,
+      });
+    } else {
+      // Apply partial updates
+      if (dto.enabled !== undefined) ffEnv.enabled = dto.enabled;
+      if (dto.rolloutPercentage !== undefined)
+        ffEnv.rolloutPercentage = dto.rolloutPercentage;
+    }
+
+    const saved = await this.ffEnvRepo.save(ffEnv);
+
+    // 4. Invalidate SDK cache for this specific flag+env combo
+    const sdkCacheKey = `flag:${flag.key}:env:${dto.environmentId}`;
+    await this.redisService.del(sdkCacheKey);
+
+    // Reload with relations for the response
+    return (await this.ffEnvRepo.findOne({
+      where: { id: saved.id },
+      relations: { environment: true, featureFlag: true },
+    }))!;
   }
 }

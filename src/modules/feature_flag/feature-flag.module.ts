@@ -8,10 +8,11 @@ import { FeatureFlagController } from './feature-flag.controller';
 import { CommonModule } from '../../common/common.module';
 import { ProjectModule } from '../project/project.module';
 import { Environment } from '../project/entities/environment.entity';
+import { Experiment } from '../experiment/entities/experiment.entity';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([FeatureFlag, Variant, FeatureFlagEnvironment, Environment]),
+        TypeOrmModule.forFeature([FeatureFlag, Variant, FeatureFlagEnvironment, Environment, Experiment]),
         CommonModule,
         ProjectModule,
     ],
